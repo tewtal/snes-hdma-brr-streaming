@@ -96,14 +96,14 @@ arch spc700-inline
 !SAMPLEBUF = $1000
 !WAIT = $70
 
-!SAMPLEBUFSIZE = $6621 
-!SAMPLEBUFLEFT = !SAMPLEBUF
-!SAMPLEBUFRIGHT = !SAMPLEBUF+$7000
-!SAMPLEBLOCKSIZE = $013b
-!PITCH = $10
+!SAMPLEBUFSIZE #= !BLOCK_SIZE*83     ;$6621 
+!SAMPLEBUFLEFT = $1000
+!SAMPLEBUFRIGHT = $8000
+!SAMPLEBLOCKSIZE = !BLOCK_SIZE
+!PITCH #= $1000*(!SAMPLERATE/32000)
 
-!SAMPLEBUFEND_LEFT = ($1000+!SAMPLEBUFSIZE)
-!SAMPLEBUFEND_RIGHT = ($8000+!SAMPLEBUFSIZE)
+!SAMPLEBUFEND_LEFT #= ($1000+!SAMPLEBUFSIZE)
+!SAMPLEBUFEND_RIGHT #= ($8000+!SAMPLEBUFSIZE)
 
 !BUFPTR = $10
 !PREVTIMER = $12
@@ -153,7 +153,31 @@ endmacro
 ; DPS writes
 macro movdsp(reg, val)
     mov $f2, #<reg>
-    mov $f3, #<val>
+    mov $f3, #(<val>&$ff)
+endmacro
+
+; Generate a block of H-DMA transfer bursts depending on burst size and block size parameters
+macro write_transfer_block(burst_size, block_size)
+    !transfer_size #= (ceil(<block_size>/4.0)*4)
+    !transfer_extra #= !transfer_size-<block_size>
+    !counter #= !transfer_size
+
+    while !counter > 0
+        if <burst_size> < !counter
+            mov !TRANSFER_SIZE, #<burst_size>
+            call transfer_block
+        else
+            mov !TRANSFER_SIZE, #!counter
+            call transfer_block
+        endif
+        !counter #= !counter-<burst_size>
+    endif
+    
+    !counter = !transfer_extra
+    while !counter > 0
+        decw !TRANSFER_PTR
+        !counter #= !counter-1
+    endif
 endmacro
 
 org $0400
@@ -201,8 +225,8 @@ spc_init:
 
     %movdsp($00, $7f) ; VxVOLL - Set left channel 0 volume
     %movdsp($01, $00) ; VxVOLR - Set right channel 0 volume
-    %movdsp($02, $00) ; VxPITCHL - Set channel 0 pitch (low byte)
-    %movdsp($03, !PITCH) ; VxPTTCHH - Set channel 0 pitch (hi byte) (Set to 32khz)
+    %movdsp($02, !PITCH)     ; VxPITCHL - Set channel 0 pitch (low byte)
+    %movdsp($03, !PITCH>>8)  ; VxPTTCHH - Set channel 0 pitch (hi byte)
     %movdsp($05, $00) ; VxADSR1 - Set channel 0 to use direct gain (No ADSR)
     %movdsp($06, $00) ; VxADSR2 - Set channel 0 ADSR parameters
     %movdsp($07, $7f) ; VxGAIN - Set channel 0 gain
@@ -210,22 +234,22 @@ spc_init:
 
     %movdsp($10, $00) ; VxVOLL - Set left channel 1 volume
     %movdsp($11, $7f) ; VxVOLR - Set right channel 1 volume
-    %movdsp($12, $00) ; VxPITCHL - Set channel 1 pitch (low byte)
-    %movdsp($13, !PITCH) ; VxPTTCHH - Set channel 1 pitch (hi byte) (Set to 32khz)
+    %movdsp($12, !PITCH)       ; VxPITCHL - Set channel 1 pitch (low byte)
+    %movdsp($13, !PITCH>>8)  ; VxPTTCHH - Set channel 1 pitch (hi byte)
     %movdsp($15, $00) ; VxADSR1 - Set channel 1 to use direct gain (No ADSR)
     %movdsp($16, $00) ; VxADSR2 - Set channel 1 ADSR parameters
     %movdsp($17, $7f) ; VxGAIN - Set channel 1 gain
     %movdsp($14, $01) ; VxOUTX - Set channel 1 sample
 
-    mov $fa, #140       ; Set Timer 0 divider to 140 (8000/140) = 57.142857142857146hz
-    mov $f1, #$01      ; Enable Timer 0
+    mov $fa, #!SPC_DIVIDER       
+    mov $f1, #$01                ; Enable Timer 0
 
     ; Wait for 8 frames of data before keying on channels
     mov !KEYON_WAIT, #$08
     mov a, $fd
     mov $f7, #$00       ; Ask for initial data
-    mov !BLOCKS, #$10   ; Initial blocks to request
-    
+
+    mov !BLOCKS, #$10   ; Initial blocks to request    
 
 .mainloop
     ; Check how many frames left before keying on
@@ -257,33 +281,17 @@ transfer_frame:
     movw ya, $10
     movw !TRANSFER_PTR, ya
     
-    mov !TRANSFER_SIZE, #80    ; Burst 80 bytes
-    call transfer_block
-    mov !TRANSFER_SIZE, #80    ; Burst 80 bytes
-    call transfer_block
-    mov !TRANSFER_SIZE, #80    ; Burst 80 bytes
-    call transfer_block         
-    mov !TRANSFER_SIZE, #76    ; Burst 76 bytes
-    call transfer_block         
-    
-    decw !TRANSFER_PTR          ; This will transfer 316 bytes which is actually one too much, so we'll have to adjust the pointer after this
+    %write_transfer_block(!BURST_SIZE, !BLOCK_SIZE)
+
     movw ya, !TRANSFER_PTR      ; Update left channel pointer
     movw $10, ya
 
     movw ya, $14
     movw !TRANSFER_PTR, ya
     
-    mov !TRANSFER_SIZE, #80    ; Burst 80 bytes
-    call transfer_block
-    mov !TRANSFER_SIZE, #80    ; Burst 80 bytes
-    call transfer_block
-    mov !TRANSFER_SIZE, #80    ; Burst 80 bytes
-    call transfer_block         
-    mov !TRANSFER_SIZE, #76    ; Burst 76 bytes
-    call transfer_block     
-    
-    decw !TRANSFER_PTR          ; This will transfer 316 bytes which is actually one too much, so we'll have to adjust the pointer after this
-    movw ya, !TRANSFER_PTR      ; Update left channel pointer
+    %write_transfer_block(!BURST_SIZE, !BLOCK_SIZE)
+
+    movw ya, !TRANSFER_PTR      ; Update right channel pointer
     movw $14, ya
 
     movw ya, $10
@@ -323,7 +331,7 @@ transfer_block:
     nop : nop : nop : nop : nop : nop
     nop : nop : nop : nop : nop : nop
     nop : nop : nop : nop : nop : nop
-    nop : nop : nop : nop : nop
+    nop : nop : nop : nop : nop : nop
 
 ; Transfer data each scanline from H-DMA writes
 .burst_scanline    

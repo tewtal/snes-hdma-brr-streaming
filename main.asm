@@ -1,6 +1,29 @@
 exhirom
+math pri on
+math round off
+
 incsrc "macros.asm"
 incsrc "snes.asm"
+
+; 32 khz streaming
+!SAMPLERATE = 32000
+!BLOCK_SIZE = 315
+!BURST_SIZE = 80
+!SPC_DIVIDER = 140    ; Sets SPC Timer 0 divider to 140 (8000/140) = 57.142857142857146hz
+                      ; This means sending one 315 bytes block 57.142857142857146 times per second, = ((315*57.142857142857146)/9)*16 = 32000hz
+
+; 24 khz streaming
+; !SAMPLERATE = 24000
+; !BLOCK_SIZE = 270
+; !BURST_SIZE = 80
+; !SPC_DIVIDER = 160    ; 50hz timer -> ((270*50)/9)*16 = 24000hz
+
+; 16 khz streaming
+; !SAMPLERATE = 16000
+; !BLOCK_SIZE = 180
+; !BURST_SIZE = 80
+; !SPC_DIVIDER = 160      ; 50hz timer -> ((180*50)/9)*16 = 16000hz
+
 
 org $c08000
 base $808000
@@ -99,12 +122,12 @@ update_buffer:
     sta $2183
 
     lda $00
-    clc : adc #$13b
+    clc : adc.w #!BLOCK_SIZE
     bcc .nowrap
 
     ; This transfer will wrap around, so let's do two transfers
     sta $0a ; save overflow bytes
-    lda #$13b
+    lda.w #!BLOCK_SIZE
     sec : sbc $0a
     ldy $00
     ldx $02
@@ -114,7 +137,7 @@ update_buffer:
     inx
     jsr dma_block
 
-    lda #$13b
+    lda.w #!BLOCK_SIZE
     sec : sbc $0a
     ldy $04
     ldx $06
@@ -126,12 +149,12 @@ update_buffer:
     bra .next
 
 .nowrap
-    lda #$13b
+    lda.w #!BLOCK_SIZE
     ldy $00
     ldx $02
     jsr dma_block
     
-    lda #$13b
+    lda.w #!BLOCK_SIZE
     ldy $04
     ldx $06
     jsr dma_block
@@ -141,14 +164,14 @@ update_buffer:
     %a16()
 
     lda $00
-    clc : adc #$13b
+    clc : adc.w #!BLOCK_SIZE
     sta $00
     bcc +
     inc $02
 +
 
     lda $04
-    clc : adc #$13b
+    clc : adc.w #!BLOCK_SIZE
     sta $04
     bcc +
     inc $06
@@ -184,27 +207,28 @@ stream_nmi:
 ; as well as the main transfer buffer being at $1000
 
 macro write_hdma_table(burst_size, block_size)
-    !counter = <block_size>
+    !transfer_size #= ceil(<block_size>/4.0)*4
+    !counter #= !transfer_size
     while !counter > 0
         db $01 : dw $0004
-        if (<burst_size>/4) < !counter
-            db ($80+(<burst_size>/4)) : dw $1000+(<block_size>-!counter)
+        if <burst_size> < !counter
+            db ($80+(<burst_size>/4)) : dw $1000+(!transfer_size-!counter)
         else
-            db ($80+(!counter/4)) : dw $1000+(<block_size>-!counter)
+            db ($80+(!counter/4)) : dw $1000+(!transfer_size-!counter)
         endif
         db $01 : dw $0000
         !counter #= !counter-<burst_size>
     endif
         
-    db $01 : dw $0000
+    db $02 : dw $0000
 
-    !counter = <block_size>
+    !counter = !transfer_size
     while !counter > 0
         db $01 : dw $0004
-        if (<burst_size>/4) < !counter
-            db ($80+(<burst_size>/4)) : dw $113b+(<block_size>-!counter)
+        if <burst_size> < !counter
+            db ($80+(<burst_size>/4)) : dw $1000+<block_size>+(!transfer_size-!counter)
         else
-            db ($80+(!counter/4)) : dw $113b+(<block_size>-!counter)
+            db ($80+(!counter/4)) : dw $1000+<block_size>+(!transfer_size-!counter)
         endif
         db $01 : dw $0000
         !counter #= !counter-<burst_size>
@@ -213,7 +237,7 @@ macro write_hdma_table(burst_size, block_size)
 endmacro
 
 hdma_table:
-%write_hdma_table(80, 316)
+%write_hdma_table(!BURST_SIZE, !BLOCK_SIZE)
 
 ; Include the SPC driver and transfer functions
 incsrc "spc.asm"
