@@ -1,0 +1,5 @@
+*.brr
+*.exe
+*.wav
+*.m4a
+build/
