@@ -7,9 +7,10 @@ incsrc "snes.asm"
 
 ; 32 khz streaming
 !SAMPLERATE = 32000
-!BLOCK_SIZE = 315
+!BLOCK_SIZE = 306     ; 315
 !BURST_SIZE = 80
-!SPC_DIVIDER = 140    ; Sets SPC Timer 0 divider to 140 (8000/140) = 57.142857142857146hz
+!SPC_DIVIDER = 136    ; 58.8235294117647
+               ;140    ; Sets SPC Timer 0 divider to 140 (8000/140) = 57.142857142857146hz
                       ; This means sending one 315 bytes block 57.142857142857146 times per second, = ((315*57.142857142857146)/9)*16 = 32000hz
 
 ; 24 khz streaming
@@ -23,6 +24,13 @@ incsrc "snes.asm"
 ; !BLOCK_SIZE = 180
 ; !BURST_SIZE = 80
 ; !SPC_DIVIDER = 160      ; 50hz timer -> ((180*50)/9)*16 = 16000hz
+
+
+; ; 8 khz streaming
+; !SAMPLERATE = 8000
+; !BLOCK_SIZE = 90
+; !BURST_SIZE = 40
+; !SPC_DIVIDER = 160      ; 50hz timer -> ((90*50)/9)*16 = 16000hz
 
 
 org $c08000
@@ -65,7 +73,7 @@ init:
     lda #$7f
     sta $4377
 
-    lda #$80
+    lda #$00
     sta $420c
 
     lda #$0f

@@ -88,6 +88,7 @@ spc_execute:
 
     ldy #$0000
     sty $2142
+    sty $2140
     rts
 
 spc_driver:
@@ -96,7 +97,7 @@ arch spc700-inline
 !SAMPLEBUF = $1000
 !WAIT = $70
 
-!SAMPLEBUFSIZE #= !BLOCK_SIZE*83     ;$6621 
+!SAMPLEBUFSIZE #= !BLOCK_SIZE*4    ;$6621 
 !SAMPLEBUFLEFT = $1000
 !SAMPLEBUFRIGHT = $8000
 !SAMPLEBLOCKSIZE = !BLOCK_SIZE
@@ -208,9 +209,9 @@ spc_init:
     mov x, $00
 
     %movdsp($6c, $20) ; FLG - Unmute and disable echo
+    %movdsp($4c, $00) ; Clear KON
     %movdsp($5c, $ff) ; Key-off all voices
     %movdsp($5c, $00) ; Key-off all voices
-    %movdsp($4c, $00) ; Key-off all voices
     %movdsp($4d, $00) ; Clear EON
     %movdsp($3d, $00) ; Clear noise enable
     %movdsp($7d, $00) ; Echo buffer size to $00 (4 bytes)
@@ -243,13 +244,11 @@ spc_init:
 
     mov $fa, #!SPC_DIVIDER       
     mov $f1, #$01                ; Enable Timer 0
-
-    ; Wait for 8 frames of data before keying on channels
-    mov !KEYON_WAIT, #$08
+    
+    mov !KEYON_WAIT, #$02
     mov a, $fd
     mov $f7, #$00       ; Ask for initial data
-
-    mov !BLOCKS, #$10   ; Initial blocks to request    
+    mov !BLOCKS, #$02   ; Initial blocks to request    
 
 .mainloop
     ; Check how many frames left before keying on
@@ -265,7 +264,7 @@ spc_init:
     dec !BLOCKS         ; Remove one block from the queue
     mov $f7, #$01       ; Ask the SNES to transfer a block
     call transfer_frame ; Transfer a block
-    jmp .end
+    jmp .end    
 .skipTransfer
     mov $f7, #$00       ; Clear transfer request flag to SNES
 
@@ -331,7 +330,7 @@ transfer_block:
     nop : nop : nop : nop : nop : nop
     nop : nop : nop : nop : nop : nop
     nop : nop : nop : nop : nop : nop
-    nop : nop : nop : nop : nop : nop
+    nop : nop : nop : nop : nop
 
 ; Transfer data each scanline from H-DMA writes
 .burst_scanline    
